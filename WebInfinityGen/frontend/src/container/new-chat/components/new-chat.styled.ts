@@ -77,14 +77,16 @@ export const MessageRow = styled.div<{
 `;
 
 export const MessageBubble = styled.div<{ $isUser: boolean }>`
-    background-color: ${({ $isUser }) => ($isUser ? "#2563eb" : "#374151")};
+    background-color: ${({ $isUser }) => ($isUser ? "black" : "")};
     color: white;
     padding: 12px 16px;
     border-radius: 16px;
     border-bottom-right-radius: ${({ $isUser }) => ($isUser ? "4px" : "16px")};
     border-bottom-left-radius: ${({ $isUser }) => ($isUser ? "16px" : "4px")};
-    max-width: 70%;
+    max-width: 100%;
     word-wrap: break-word;
+    line-height: 28px;
+    font-size: 1rem;
 `;
 
 export const Timestamp = styled.p`

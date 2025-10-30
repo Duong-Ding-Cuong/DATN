@@ -17,14 +17,49 @@ app.use(cors());
 app.use(express.json());
 
 // Kết nối MongoDB với mongoose
-mongoose.connect(process.env.MONGODB_URI)
-.then(() => {
-  console.log("✅ Database connected with Mongoose!");
-})
-.catch((err) => {
-  console.error("❌ MongoDB connection error:", err);
-  process.exit(1);
-});
+const dbUri = process.env.MONGODB_URI;
+let mongooseConnected = false;
+
+if (!dbUri) {
+  console.warn('⚠️  MONGODB_URI not set. Skipping DB connection — database features will be unavailable.');
+} else {
+  let triedFallback = false;
+  const tryConnect = async (uri) => {
+    try {
+      await mongoose.connect(uri);
+      mongooseConnected = true;
+      console.log('✅ Database connected with Mongoose!');
+      return true;
+    } catch (err) {
+      console.error('❌ MongoDB connection error:', err);
+      return false;
+    }
+  };
+
+  // First try primary URI, then fallback to local MongoDB for developer convenience
+  (async () => {
+    const ok = await tryConnect(dbUri);
+    if (!ok && !triedFallback) {
+      triedFallback = true;
+      const fallback = 'mongodb://127.0.0.1:27017/WebAIGenInfinityDB';
+      console.warn('Attempting fallback local MongoDB at', fallback);
+      const ok2 = await tryConnect(fallback);
+      if (!ok2) {
+        console.warn('Fallback local MongoDB also failed. The server will continue to run without DB.');
+      }
+    }
+  })();
+
+  // Keep track of connection status
+  mongoose.connection.on('error', (err) => {
+    mongooseConnected = false;
+    console.error('Mongoose connection error:', err);
+  });
+  mongoose.connection.on('disconnected', () => {
+    mongooseConnected = false;
+    console.warn('Mongoose disconnected');
+  });
+}
 
 
 // ===================== AUTH ENDPOINTS =====================

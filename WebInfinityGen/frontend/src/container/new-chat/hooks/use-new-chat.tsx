@@ -72,7 +72,7 @@ const useNewChat = () => {
                 payload.image = imageBase64;
             }
             const response = await fetch(
-                "https://cuongdd.app.n8n.cloud/webhook-test/api/n8n",
+                "http://localhost:5678/webhook-test/ba995b5f-52a0-4505-9584-0d8737cbe3ce",
                 {
                     method: "POST",
                     headers: {
@@ -84,6 +84,7 @@ const useNewChat = () => {
             const data = await response.json();
             const responseData =
                 Array.isArray(data) && data.length > 0 ? data[0] : data;
+            // Common OpenAI-like shape: { choices: [{ message: { content, images } }] }
             if (
                 responseData.choices &&
                 Array.isArray(responseData.choices) &&
@@ -96,15 +97,46 @@ const useNewChat = () => {
                     text = choice.message.content || "";
                     if (
                         Array.isArray(choice.message.images) &&
-                        choice.message.images.length > 0 &&
-                        choice.message.images[0].image_url &&
-                        choice.message.images[0].image_url?.url
+                        choice.message.images.length > 0
                     ) {
-                        image = choice.message.images[0].image_url.url;
+                        const firstImg = choice.message.images[0];
+                        // Support different image shapes
+                        image =
+                            firstImg.image_url?.url || firstImg.url || firstImg;
                     }
                 }
                 if (text || image) return { text, image };
             }
+
+            // n8n / custom webhook shape observed in network: { content: { parts: [{ text: '...' }] }, role }
+            const extractFromContentParts = (
+                obj: unknown
+            ): string | undefined => {
+                if (!obj || typeof obj !== "object") return undefined;
+                const record = obj as Record<string, unknown>;
+                const c = (record.content ?? record) as
+                    | Record<string, unknown>
+                    | undefined;
+                if (!c) return undefined;
+                const parts = c.parts as unknown;
+                if (Array.isArray(parts) && parts.length > 0) {
+                    const part = parts[0];
+                    if (typeof part === "string") return part;
+                    if (part && typeof part === "object") {
+                        const p = part as Record<string, unknown>;
+                        if (typeof p.text === "string") return p.text;
+                    }
+                }
+                return undefined;
+            };
+
+            // try extracting from responseData or raw data array
+            const textFromContent =
+                extractFromContentParts(responseData) ||
+                (Array.isArray(data) &&
+                    data.length > 0 &&
+                    extractFromContentParts(data[0]));
+            if (textFromContent) return { text: textFromContent };
 
             // Fallback: Nếu response là mảng và có output, lấy output làm text
             if (Array.isArray(data) && data.length > 0 && data[0].output) {

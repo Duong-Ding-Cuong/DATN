@@ -63,11 +63,14 @@ export const MyLayout = ({
     return (
         <ConfigProvider
             theme={{
+                token: {
+                    colorPrimary: "#ffffff",
+                },
                 components: {
                     Menu: {
                         itemColor: "#ffffff",
-                        itemSelectedColor: "#ffffff",
-                        itemHoverColor: "#ffffff",
+                        itemSelectedColor: "#7b4937",
+                        itemHoverColor: "#c6613f",
                         itemSelectedBg: "#303030",
                         itemActiveBg: "#303030",
                     },
@@ -118,6 +121,7 @@ export const MyLayout = ({
                     <Menu
                         mode="inline"
                         defaultSelectedKeys={["1"]}
+                        defaultOpenKeys={["sub1"]}
                         items={sidebarUnitItems}
                         onClick={onClick}
                         style={{

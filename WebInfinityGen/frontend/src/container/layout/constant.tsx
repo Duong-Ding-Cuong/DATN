@@ -6,10 +6,21 @@ import {
 
 export const sidebarUnitItems = [
     {
-        key: "1",
+        key: "sub1",
+        label: " Đoạn chat mới ",
         icon: <FormOutlined />,
-        label: "Đoạn chat mới",
-        path: "/chat/new",
+        children: [
+            {
+                key: "1",
+                label: "Hoi dap voi AI",
+                path: "/chat/new",
+            },
+            {
+                key: "2",
+                label: "Phan tich file",
+                path: "/chat/analyze",
+            },
+        ],
     },
     {
         key: "2",
@@ -24,3 +35,10 @@ export const sidebarUnitItems = [
         path: "/chat/library",
     },
 ];
+
+// {
+//     key: "1",
+//     icon: <FormOutlined />,
+//     label: "Đoạn chat mới",
+//     path: "/chat/new",
+// },
