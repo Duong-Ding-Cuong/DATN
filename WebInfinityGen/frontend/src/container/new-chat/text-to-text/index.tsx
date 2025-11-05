@@ -1,6 +1,6 @@
 import { NewChatComponent } from "./components/new-chat";
 
-export const NewChatContainer = () => {
+export const NewChatTextToTextContainer = () => {
     return (
         <>
             <NewChatComponent />

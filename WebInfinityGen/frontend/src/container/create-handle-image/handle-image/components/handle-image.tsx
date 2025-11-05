@@ -1,8 +1,8 @@
 import React, { useRef, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { Send, Plus, X, Image as ImageIcon } from "lucide-react";
-import { MyLayout } from "../../layout/layout";
-import useChat from "../hooks/use-new-chat";
+import { MyLayout } from "../../../layout/layout";
+import useHandleImage from "../hooks/use-handle-image";
 import {
     RootContainer,
     DragOverlay,
@@ -31,7 +31,7 @@ import {
     StyledTextarea,
     SendButton,
     HintText,
-} from "./new-chat.styled";
+} from "./style";
 
 export const NewChatComponent = () => {
     const {
@@ -43,7 +43,7 @@ export const NewChatComponent = () => {
         handleSubmit,
         selectedImage,
         setSelectedImage,
-    } = useChat();
+    } = useHandleImage();
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);

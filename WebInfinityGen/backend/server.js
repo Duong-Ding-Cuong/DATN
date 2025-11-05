@@ -182,11 +182,25 @@ app.post("/api/auth/login", async (req, res) => {
       last_login: new Date()
     };
 
+    // Sign JWT token for the user (development fallback secret if not provided)
+    const jwtSecret = process.env.JWT_SECRET || "dev-secret";
+    let token = null;
+    try {
+      token = jwt.sign(
+        { id: user._id, email: user.email, role: user.role },
+        jwtSecret,
+        { expiresIn: "7d" }
+      );
+    } catch (e) {
+      console.error("JWT sign error:", e);
+    }
+
     res.status(200).json({
       success: true,
       message: "Đăng nhập thành công",
       data: {
-        user: userResponse
+        user: userResponse,
+        token,
       }
     });
 
@@ -380,6 +394,7 @@ app.post("/api/replicate", async (req, res) => {
 
 // Tạo MongoDB client riêng cho API keys collection
 const { MongoClient, ObjectId } = require("mongodb");
+const jwt = require("jsonwebtoken");
 let apiDb;
 
 // Connect to MongoDB for API keys

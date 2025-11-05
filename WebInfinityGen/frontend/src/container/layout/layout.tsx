@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
     DownOutlined,
     MenuFoldOutlined,
@@ -41,6 +41,7 @@ export const MyLayout = ({
         }
     }, []);
     const navigate = useNavigate();
+    const location = useLocation();
 
     const onClick = (e: { key: string }) => {
         const key = e.key;
@@ -59,6 +60,43 @@ export const MyLayout = ({
         const path = findPath(sidebarUnitItems);
         if (path) navigate(path);
     };
+
+    // Tìm key tương ứng với path hiện tại
+    const findKeyByPath = (
+        items: SidebarItem[],
+        targetPath: string
+    ): string | undefined => {
+        for (const item of items) {
+            if (item.path === targetPath) return item.key;
+            if (item.children) {
+                const childKey = findKeyByPath(item.children, targetPath);
+                if (childKey) return childKey;
+            }
+        }
+        return undefined;
+    };
+
+    // Tìm tất cả parent keys để mở submenu
+    const findOpenKeys = (
+        items: SidebarItem[],
+        targetKey: string,
+        parents: string[] = []
+    ): string[] => {
+        for (const item of items) {
+            if (item.key === targetKey) return parents;
+            if (item.children) {
+                const found = findOpenKeys(item.children, targetKey, [
+                    ...parents,
+                    item.key,
+                ]);
+                if (found.length > 0) return found;
+            }
+        }
+        return [];
+    };
+    const currentKey =
+        findKeyByPath(sidebarUnitItems, location.pathname) || "1";
+    const openKeys = findOpenKeys(sidebarUnitItems, currentKey);
 
     return (
         <ConfigProvider
@@ -120,8 +158,9 @@ export const MyLayout = ({
                     </div>
                     <Menu
                         mode="inline"
-                        defaultSelectedKeys={["1"]}
-                        defaultOpenKeys={["sub1"]}
+                        selectedKeys={[currentKey]}
+                        // defaultSelectedKeys={["1"]}
+                        defaultOpenKeys={openKeys}
                         items={sidebarUnitItems}
                         onClick={onClick}
                         style={{
@@ -205,7 +244,12 @@ export const MyLayout = ({
                         </div>
                     </Header>
                     {/* Content */}
-                    <Layout style={{ borderLeft: "1px solid #303030" }}>
+                    <Layout
+                        style={{
+                            borderLeft: "1px solid #303030",
+                            position: "relative",
+                        }}
+                    >
                         <Content
                             style={{
                                 width: "100%",

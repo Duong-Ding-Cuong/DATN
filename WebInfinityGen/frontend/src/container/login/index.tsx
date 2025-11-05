@@ -48,6 +48,9 @@ export const LoginComponent: React.FC<LoginProps> = ({
             if (data.success && data.data?.user) {
                 message.success(data.message || "Đăng nhập thành công!");
                 localStorage.setItem("user", JSON.stringify(data.data.user));
+                if (data.data.token) {
+                    localStorage.setItem("token", data.data.token);
+                }
                 if (onLogin) {
                     onLogin(data.data.user);
                 }

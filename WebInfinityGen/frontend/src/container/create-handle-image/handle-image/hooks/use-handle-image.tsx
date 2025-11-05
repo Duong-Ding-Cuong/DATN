@@ -5,7 +5,7 @@ export type Message = {
     text: string;
     timestamp: string;
     isUser: boolean;
-    image?: string; // Thêm field cho ảnh
+    image?: string;
 };
 
 type SelectedImage = {
@@ -13,7 +13,7 @@ type SelectedImage = {
     preview: string;
 };
 
-const useNewChat = () => {
+const useHandleImage = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [isInputCentered, setIsInputCentered] = useState(true);
@@ -29,7 +29,6 @@ const useNewChat = () => {
             reader.readAsDataURL(file);
             reader.onload = () => {
                 const base64String = reader.result as string;
-                // Loại bỏ phần "data:image/...;base64," để chỉ lấy base64 string
                 const base64Data = base64String.split(",")[1];
                 resolve(base64Data);
             };
@@ -37,17 +36,15 @@ const useNewChat = () => {
         });
     };
 
-    // Hàm chuyển base64 (không có tiền tố) thành URL ảnh cho <img src>
+    // Hàm chuyển base64 thành URL ảnh
     const base64ToImageUrl = (base64: string): string => {
-        // Kiểm tra nếu đã có prefix data:image
         if (base64.startsWith("data:image/")) {
             return base64;
         }
-        // Kiểm tra nếu là URL thông thường
         if (base64.startsWith("http://") || base64.startsWith("https://")) {
             return base64;
         }
-        // Tự động detect mime type từ base64 string
+
         let mimeType = "image/jpeg";
         if (base64.startsWith("/9j/")) {
             mimeType = "image/jpeg";
@@ -58,6 +55,7 @@ const useNewChat = () => {
         } else if (base64.startsWith("UklGR")) {
             mimeType = "image/webp";
         }
+
         return `data:${mimeType};base64,${base64}`;
     };
 
@@ -71,8 +69,9 @@ const useNewChat = () => {
             if (imageBase64) {
                 payload.image = imageBase64;
             }
+
             const response = await fetch(
-                "http://localhost:5678/webhook-test/ba995b5f-52a0-4505-9584-0d8737cbe3ce",
+                "http://localhost:5678/webhook/handle-image",
                 {
                     method: "POST",
                     headers: {
@@ -81,71 +80,122 @@ const useNewChat = () => {
                     body: JSON.stringify(payload),
                 }
             );
+
             const data = await response.json();
-            const responseData =
+            console.log("📥 Raw API response:", data);
+
+            let responseData =
                 Array.isArray(data) && data.length > 0 ? data[0] : data;
-            // Common OpenAI-like shape: { choices: [{ message: { content, images } }] }
+
+            // ===================== PARSE JSON STRING IF NEEDED =====================
+
+            // Nếu field "output" là JSON string, parse nó
             if (
+                responseData?.output &&
+                typeof responseData.output === "string"
+            ) {
+                try {
+                    const parsedOutput = JSON.parse(responseData.output);
+                    console.log(
+                        "✅ Parsed JSON from 'output' field:",
+                        parsedOutput
+                    );
+                    responseData = parsedOutput;
+                } catch {
+                    console.log(
+                        " 'output' is not JSON, treating as plain text"
+                    );
+                }
+            }
+
+            let textContent: string | undefined = undefined;
+            let imageUrl: string | undefined = undefined;
+
+            // ===================== EXTRACT TEXT & IMAGE =====================
+
+            // Priority 1: Direct fields "text" and "image" (after JSON parse)
+            if (responseData?.text && typeof responseData.text === "string") {
+                console.log("✅ Found 'text' field");
+                textContent = responseData.text;
+            }
+
+            if (responseData?.image && typeof responseData.image === "string") {
+                console.log("✅ Found 'image' field");
+                imageUrl = responseData.image;
+            }
+
+            // Priority 2: Field "message"
+            if (
+                !textContent &&
+                responseData?.message &&
+                typeof responseData.message === "string"
+            ) {
+                console.log("✅ Found 'message' field");
+                textContent = responseData.message;
+            }
+
+            // Priority 3: Field "data"
+            if (
+                !textContent &&
+                responseData?.data &&
+                typeof responseData.data === "string"
+            ) {
+                console.log("✅ Found 'data' field");
+                textContent = responseData.data;
+            }
+
+            // Priority 4: OpenAI-like format
+            if (
+                !textContent &&
                 responseData.choices &&
                 Array.isArray(responseData.choices) &&
                 responseData.choices.length > 0
             ) {
                 const choice = responseData.choices[0];
-                let text = "";
-                let image = undefined;
                 if (choice.message) {
-                    text = choice.message.content || "";
+                    textContent = choice.message.content || "";
+
                     if (
+                        !imageUrl &&
                         Array.isArray(choice.message.images) &&
                         choice.message.images.length > 0
                     ) {
                         const firstImg = choice.message.images[0];
-                        // Support different image shapes
-                        image =
+                        imageUrl =
                             firstImg.image_url?.url || firstImg.url || firstImg;
                     }
                 }
-                if (text || image) return { text, image };
             }
 
-            // n8n / custom webhook shape observed in network: { content: { parts: [{ text: '...' }] }, role }
-            const extractFromContentParts = (
-                obj: unknown
-            ): string | undefined => {
-                if (!obj || typeof obj !== "object") return undefined;
-                const record = obj as Record<string, unknown>;
-                const c = (record.content ?? record) as
-                    | Record<string, unknown>
-                    | undefined;
-                if (!c) return undefined;
-                const parts = c.parts as unknown;
+            // Priority 5: Content parts format
+            if (!textContent && responseData?.content?.parts) {
+                const parts = responseData.content.parts;
                 if (Array.isArray(parts) && parts.length > 0) {
                     const part = parts[0];
-                    if (typeof part === "string") return part;
-                    if (part && typeof part === "object") {
-                        const p = part as Record<string, unknown>;
-                        if (typeof p.text === "string") return p.text;
-                    }
+                    textContent = typeof part === "string" ? part : part.text;
                 }
-                return undefined;
-            };
-
-            // try extracting from responseData or raw data array
-            const textFromContent =
-                extractFromContentParts(responseData) ||
-                (Array.isArray(data) &&
-                    data.length > 0 &&
-                    extractFromContentParts(data[0]));
-            if (textFromContent) return { text: textFromContent };
-
-            // Fallback: Nếu response là mảng và có output, lấy output làm text
-            if (Array.isArray(data) && data.length > 0 && data[0].output) {
-                return { text: data[0].output };
             }
-            if (data.text || data.image)
-                return { text: data.text, image: data.image };
-            return { text: "⚠️ Không có phản hồi từ AI." };
+
+            // ===================== VALIDATION =====================
+
+            if (!textContent && !imageUrl) {
+                console.warn("⚠️ No text or image found in response");
+                return { text: "⚠️ Không có phản hồi từ AI." };
+            }
+
+            console.log("✅ Parsed response:", {
+                hasText: !!textContent,
+                textPreview: textContent?.substring(0, 100),
+                hasImage: !!imageUrl,
+                imagePreview: imageUrl?.substring(0, 100),
+            });
+
+            return {
+                text: textContent || "",
+                image: imageUrl,
+            };
         } catch (error) {
+            console.error("💥 API Error:", error);
             return { text: handleApiError(error) };
         }
     };
@@ -166,7 +216,6 @@ const useNewChat = () => {
         const userMessage = inputValue.trim();
         const hasImage = selectedImage !== null;
 
-        // Tạo message của user
         const userMessageObj: Message = {
             id: Date.now(),
             text: userMessage,
@@ -211,6 +260,13 @@ const useNewChat = () => {
                 isUser: false,
                 image: aiResponse.image,
             };
+
+            console.log("📦 AI message object:", {
+                hasText: !!aiMessageObj.text,
+                hasImage: !!aiMessageObj.image,
+                imagePreview: aiMessageObj.image?.substring(0, 100),
+            });
+
             setMessages((prev) => [...prev, aiMessageObj]);
         } catch (error) {
             const errorMessage: Message = {
@@ -228,7 +284,7 @@ const useNewChat = () => {
         }
     };
 
-    // Trả về messages đã xử lý image thành URL hợp lệ cho <img src>
+    // Trả về messages đã xử lý image thành URL hợp lệ
     const processedMessages = messages.map((msg) => {
         if (
             msg.image &&
@@ -253,4 +309,4 @@ const useNewChat = () => {
     };
 };
 
-export default useNewChat;
+export default useHandleImage;
