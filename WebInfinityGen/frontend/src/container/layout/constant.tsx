@@ -12,7 +12,7 @@ export const sidebarUnitItems = [
         children: [
             {
                 key: "1",
-                label: "Tạo đoạn chat mới",
+                label: "chat mới",
                 path: "/chat/new",
             },
             {

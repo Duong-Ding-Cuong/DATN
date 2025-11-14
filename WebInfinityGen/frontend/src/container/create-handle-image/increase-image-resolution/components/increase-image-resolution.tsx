@@ -32,7 +32,7 @@ export const IncreaseImageResolutionComponent = () => {
         <MyLayout>
             <RootContainer>
                 <WelcomeContainer>
-                    <WelcomeTitle>Tăng độ phân giải ảnh</WelcomeTitle>
+                    <WelcomeTitle>Làm nét ảnh</WelcomeTitle>
                 </WelcomeContainer>
 
                 {!imageData ? (

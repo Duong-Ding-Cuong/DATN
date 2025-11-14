@@ -112,11 +112,53 @@ export const useCreateGame = () => {
 
             // ===================== EXTRACT HTML/CSS/JS =====================
 
+            // 🆕 Priority 0: New format with filename/content structure
+            if (responseData?.html?.content) {
+                html = responseData.html.content;
+                console.log("✅ Found html.content field");
+            }
+            if (responseData?.css?.content) {
+                css = responseData.css.content;
+                console.log("✅ Found css.content field");
+            }
+            if (responseData?.javascript?.content) {
+                javascript = responseData.javascript.content;
+                console.log("✅ Found javascript.content field");
+            }
+            if (responseData?.js?.content) {
+                javascript = responseData.js.content;
+                console.log("✅ Found js.content field");
+            }
+
             // Priority 1: Direct fields
-            if (responseData?.html) html = responseData.html;
-            if (responseData?.css) css = responseData.css;
-            if (responseData?.javascript) javascript = responseData.javascript;
-            if (responseData?.js) javascript = responseData.js; // Alternative field name
+            if (
+                !html &&
+                responseData?.html &&
+                typeof responseData.html === "string"
+            ) {
+                html = responseData.html;
+            }
+            if (
+                !css &&
+                responseData?.css &&
+                typeof responseData.css === "string"
+            ) {
+                css = responseData.css;
+            }
+            if (
+                !javascript &&
+                responseData?.javascript &&
+                typeof responseData.javascript === "string"
+            ) {
+                javascript = responseData.javascript;
+            }
+            if (
+                !javascript &&
+                responseData?.js &&
+                typeof responseData.js === "string"
+            ) {
+                javascript = responseData.js;
+            }
 
             // Priority 2: Code blocks in text/message
             const textContent =
