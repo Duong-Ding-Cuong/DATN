@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 export type Message = {
     id: number;
@@ -20,6 +21,27 @@ export const useChatFileToText = () => {
     const [isInputCentered, setIsInputCentered] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+    const location = useLocation();
+
+    // Lắng nghe event tạo chat mới
+    useEffect(() => {
+        const handleCreateNewChat = async (event: Event) => {
+            const customEvent = event as CustomEvent;
+            const { path } = customEvent.detail;
+
+            if (location.pathname === path && messages.length > 0) {
+                setMessages([]);
+                setInputValue("");
+                setIsInputCentered(true);
+                setSelectedFile(null);
+            }
+        };
+
+        window.addEventListener("createNewChat", handleCreateNewChat);
+        return () => {
+            window.removeEventListener("createNewChat", handleCreateNewChat);
+        };
+    }, [messages, location.pathname]);
 
     // Helper: convert base64 to blob URL
     const base64ToBlobUrl = (

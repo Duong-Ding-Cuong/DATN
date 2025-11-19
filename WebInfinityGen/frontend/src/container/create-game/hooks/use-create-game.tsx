@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 export type Message = {
     id: number;
@@ -29,6 +30,26 @@ export const useCreateGame = () => {
         css: string;
         javascript: string;
     } | null>(null);
+    const location = useLocation();
+
+    // Lắng nghe event tạo chat mới
+    useEffect(() => {
+        const handleCreateNewChat = async (event: Event) => {
+            const customEvent = event as CustomEvent;
+            const { path } = customEvent.detail;
+
+            if (location.pathname === path && messages.length > 0) {
+                setMessages([]);
+                setInputValue("");
+                setCurrentGame(null);
+            }
+        };
+
+        window.addEventListener("createNewChat", handleCreateNewChat);
+        return () => {
+            window.removeEventListener("createNewChat", handleCreateNewChat);
+        };
+    }, [messages, location.pathname]);
     const [error, setError] = useState<string | null>(null);
 
     const isInputCentered = messages.length === 0;

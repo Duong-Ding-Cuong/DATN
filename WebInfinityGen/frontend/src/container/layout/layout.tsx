@@ -4,17 +4,22 @@ import {
     DownOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
+    PlusOutlined,
 } from "@ant-design/icons";
 import { Button, ConfigProvider, Dropdown, Layout, Menu } from "antd";
 import { Content, Header } from "antd/es/layout/layout";
-import { sidebarUnitItems } from "./constant";
+import { sidebarUnitItems, n8nMenuItem } from "./constant";
+import { ChatHistoryMenu } from "./chat-history-menu";
 
 const { Sider } = Layout;
 
 interface SidebarItem {
     key: string;
     path?: string;
+    domain?: string;
     children?: SidebarItem[];
+    label?: string;
+    icon?: React.ReactNode;
 }
 
 export const MyLayout = ({
@@ -26,6 +31,7 @@ export const MyLayout = ({
 }) => {
     const [collapsed, setCollapsed] = useState(false);
     const [username, setUsername] = useState<string>("user");
+    const [menuItems, setMenuItems] = useState<SidebarItem[]>(sidebarUnitItems);
 
     useEffect(() => {
         try {
@@ -35,6 +41,10 @@ export const MyLayout = ({
                 if (userObj && userObj.username) {
                     setUsername(userObj.username);
                 }
+                // Kiểm tra role admin
+                if (userObj && userObj.role === "admin") {
+                    setMenuItems([...sidebarUnitItems, n8nMenuItem]);
+                }
             }
         } catch {
             // fallback giữ nguyên username mặc định
@@ -43,22 +53,99 @@ export const MyLayout = ({
     const navigate = useNavigate();
     const location = useLocation();
 
+    // Xử lý tạo chat mới - trigger event để component chat xử lý
+    const handleNewChat = (path: string) => {
+        // Dispatch event để notify component chat
+        window.dispatchEvent(
+            new CustomEvent("createNewChat", {
+                detail: { path },
+            })
+        );
+
+        // Navigate to path without chatId
+        navigate(path);
+    };
+
+    // Add nút "+" vào menu items có path
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addNewChatButton = (items: SidebarItem[]): any[] => {
+        return items.map((item) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const newItem: any = { ...item };
+
+            if (item.path && !item.domain) {
+                // Thêm nút "+" cho items có path
+                newItem.label = (
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            width: "100%",
+                        }}
+                    >
+                        <span>{item.label}</span>
+                        <PlusOutlined
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleNewChat(item.path!);
+                            }}
+                            style={{
+                                fontSize: "12px",
+                                padding: "4px",
+                                borderRadius: "4px",
+                                transition: "all 0.2s",
+                                color: "#888",
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.color = "#c6613f";
+                                e.currentTarget.style.background = "#2a2a2a";
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.color = "#888";
+                                e.currentTarget.style.background =
+                                    "transparent";
+                            }}
+                        />
+                    </div>
+                );
+            }
+
+            if (item.children) {
+                newItem.children = addNewChatButton(item.children);
+            }
+
+            return newItem;
+        });
+    };
+
+    const menuItemsWithButton = addNewChatButton(menuItems);
+
     const onClick = (e: { key: string }) => {
         const key = e.key;
 
-        const findPath = (items: SidebarItem[]): string | undefined => {
+        const findPathOrDomain = (
+            items: SidebarItem[]
+        ): { path?: string; domain?: string } | undefined => {
             for (const item of items) {
-                if (item.key === key && item.path) return item.path;
+                if (item.key === key) {
+                    if (item.path) return { path: item.path };
+                    if (item.domain) return { domain: item.domain };
+                }
                 if (item.children) {
-                    const child = findPath(item.children);
+                    const child = findPathOrDomain(item.children);
                     if (child) return child;
                 }
             }
             return undefined;
         };
 
-        const path = findPath(sidebarUnitItems);
-        if (path) navigate(path);
+        const result = findPathOrDomain(menuItems);
+        if (result?.path) {
+            navigate(result.path);
+        } else if (result?.domain) {
+            window.open(result.domain, "_blank");
+        }
     };
 
     // Tìm key tương ứng với path hiện tại
@@ -94,9 +181,8 @@ export const MyLayout = ({
         }
         return [];
     };
-    const currentKey =
-        findKeyByPath(sidebarUnitItems, location.pathname) || "1";
-    const openKeys = findOpenKeys(sidebarUnitItems, currentKey);
+    const currentKey = findKeyByPath(menuItems, location.pathname) || "1";
+    const openKeys = findOpenKeys(menuItems, currentKey);
 
     return (
         <ConfigProvider
@@ -159,15 +245,18 @@ export const MyLayout = ({
                     <Menu
                         mode="inline"
                         selectedKeys={[currentKey]}
-                        // defaultSelectedKeys={["1"]}
                         defaultOpenKeys={openKeys}
-                        items={sidebarUnitItems}
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        items={menuItemsWithButton as any}
                         onClick={onClick}
                         style={{
                             background: "#181818",
                             color: "#fff",
                         }}
                     />
+
+                    {/* Chat History Section */}
+                    {!collapsed && <ChatHistoryMenu />}
                 </Sider>
 
                 {/* Main Layout */}

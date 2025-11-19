@@ -12,7 +12,7 @@ export const sidebarUnitItems = [
         children: [
             {
                 key: "1",
-                label: "chat mới",
+                label: "Chat mới",
                 path: "/chat/new",
             },
             {
@@ -66,10 +66,11 @@ export const sidebarUnitItems = [
         label: "Tạo trò chơi",
         path: "/chat/create-game",
     },
-    {
-        key: "sub4",
-        icon: <PictureOutlined />,
-        label: "Thư viện",
-        path: "/chat/library",
-    },
 ];
+
+export const n8nMenuItem = {
+    key: "sub5",
+    icon: <PictureOutlined />,
+    label: "n8n",
+    domain: "https://n8n-production-64f1.up.railway.app/workflow/mDEn1xAzXUodj4rN",
+};

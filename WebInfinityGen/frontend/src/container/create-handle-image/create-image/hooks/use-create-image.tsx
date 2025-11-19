@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 export type Message = {
     id: number;
@@ -20,6 +21,27 @@ export const useCreateImage = () => {
     const [isInputCentered, setIsInputCentered] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+    const location = useLocation();
+
+    // Lắng nghe event tạo chat mới
+    useEffect(() => {
+        const handleCreateNewChat = async (event: Event) => {
+            const customEvent = event as CustomEvent;
+            const { path } = customEvent.detail;
+
+            if (location.pathname === path && messages.length > 0) {
+                setMessages([]);
+                setInputValue("");
+                setIsInputCentered(true);
+                setUploadedImage(null);
+            }
+        };
+
+        window.addEventListener("createNewChat", handleCreateNewChat);
+        return () => {
+            window.removeEventListener("createNewChat", handleCreateNewChat);
+        };
+    }, [messages, location.pathname]);
 
     // 📤 Convert file to base64
     const fileToBase64 = (file: File): Promise<string> => {
@@ -160,7 +182,7 @@ export const useCreateImage = () => {
 
             // Gọi n8n webhook
             const response = await fetch(
-                "http://localhost:5678/webhook/create-image",
+                "http://localhost:5678/webhook-test/create-image",
                 {
                     method: "POST",
                     headers: {
@@ -204,7 +226,7 @@ export const useCreateImage = () => {
             let textContent = "";
             let imageUrl: string | null = null;
 
-            // ===================== 🧩 PARSE RESPONSE =====================
+            // ===================== PARSE RESPONSE =====================
 
             // Xử lý response từ n8n
             const responseData =
@@ -330,7 +352,7 @@ export const useCreateImage = () => {
                     }
                 } catch (err) {
                     console.log(
-                        "ℹ️ 'output' is not JSON, trying to extract image",
+                        "'output' is not JSON, trying to extract image",
                         err
                     );
                     const { cleanText, imageBase64 } = extractImageFromText(
@@ -367,7 +389,7 @@ export const useCreateImage = () => {
 
             textContent = textContent.trim();
 
-            // ===================== 🧩 KẾT QUẢ =====================
+            // =====================KẾT QUẢ =====================
 
             // Remove markdown image syntax nếu có
             result.text =
@@ -376,7 +398,7 @@ export const useCreateImage = () => {
 
             if (imageUrl) {
                 result.image = imageUrl;
-                console.log("✅ Final generated image:", {
+                console.log(" Final generated image:", {
                     imageLength: imageUrl.length,
                     imagePreview: imageUrl.substring(0, 100),
                 });
@@ -384,7 +406,7 @@ export const useCreateImage = () => {
                 console.warn("⚠️ No image found in response");
             }
 
-            console.log("✅ Final result:", {
+            console.log("Final result:", {
                 textPreview: result.text.substring(0, 100),
                 hasImage: !!result.image,
             });
@@ -401,7 +423,7 @@ export const useCreateImage = () => {
         }
     };
 
-    // ===================== ✉️ HANDLE SUBMIT =====================
+    // ===================== HANDLE SUBMIT =====================
     const handleSubmit = async () => {
         const userMessage = inputValue.trim();
 
@@ -413,7 +435,7 @@ export const useCreateImage = () => {
             return;
         }
 
-        console.log("🚀 Submitting:", {
+        console.log("Submitting:", {
             prompt: userMessage,
             hasInputImage: !!uploadedImage,
         });
@@ -451,7 +473,7 @@ export const useCreateImage = () => {
                 image: aiResponse.image,
             };
 
-            console.log("💬 AI message:", {
+            console.log("AI message:", {
                 textPreview: aiMsg.text.substring(0, 100),
                 hasImage: !!aiMsg.image,
             });
@@ -462,7 +484,7 @@ export const useCreateImage = () => {
             // Clear uploaded image after processing
             setUploadedImage(null);
 
-            console.log("✅ Image created successfully");
+            console.log("Image created successfully");
         } catch (error) {
             console.error("❌ Submit Error:", error);
 
@@ -483,7 +505,7 @@ export const useCreateImage = () => {
         }
     };
 
-    // ===================== 🔄 CLEAR CHAT =====================
+    // =====================CLEAR CHAT =====================
     const clearChat = () => {
         setMessages([]);
         setInputValue("");

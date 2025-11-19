@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const AccountModel = require("./models/account");
+const ChatHistoryModel = require("./models/chatHistory");
 require("dotenv").config();
 let fetch;
 try {
@@ -291,167 +292,276 @@ app.get("/api/users/me", async (req, res) => {
   }
 });
 
-// ===================== API KEYS ENDPOINTS (GIỮ NGUYÊN) =====================
-// Lưu ý: Phần này vẫn dùng MongoDB client cũ, bạn có thể tạo model cho API keys nếu muốn
-// ===================== REPLICATE ENDPOINT =====================
-// Endpoint mới: nhận file ảnh và prompt
-app.post("/api/replicate-upload", upload.single("image"), async (req, res) => {
-  try {
-    const prompt = req.body.prompt;
-    const imageFile = req.file;
 
-    if (!prompt || !imageFile) {
+// ===================== CHAT HISTORY ENDPOINTS =====================
+
+// 1. POST /api/chat/history - Tạo đoạn chat mới
+app.post("/api/chat/history", async (req, res) => {
+  try {
+    const { chatId, userId, title, chatType, firstMessage } = req.body;
+
+    // Validate input
+    if (!chatId || !userId || !title) {
       return res.status(400).json({
         success: false,
-        message: "Thiếu prompt hoặc file ảnh"
+        message: "chatId, userId và title là bắt buộc"
       });
     }
 
-    // Đọc buffer file ảnh
-    const imageBuffer = imageFile.buffer;
-
-    // Gửi tới Replicate API (image-to-image)
-    // Ví dụ với model 'stability-ai/stable-diffusion-img2img'
-    const formData = new FormData();
-    formData.append("version", "991ed12a2ef8ad7f09a86e73c0756f461fc2a824d4dbbe8b2f4b6d28857e1f5c"); // Thay bằng version model img2img
-    formData.append("input", JSON.stringify({ prompt }));
-    formData.append("image", imageBuffer, { filename: imageFile.originalname });
-
-    const response = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
-      },
-      body: formData
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      res.status(200).json({
-        success: true,
-        data
-      });
-    } else {
-      res.status(response.status).json({
+    // Check if chatId already exists
+    const existingChat = await ChatHistoryModel.findOne({ chatId });
+    if (existingChat) {
+      return res.status(409).json({
         success: false,
-        message: data.error || "Lỗi khi gọi Replicate img2img"
+        message: "Chat ID đã tồn tại"
       });
     }
-  } catch (err) {
-    console.error("Replicate-upload error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi server khi gọi Replicate-upload"
-    });
-  }
-});
-app.post("/api/replicate", async (req, res) => {
-  try {
-    const { prompt } = req.body;
 
-    if (!prompt) {
+    // Tạo messages array với nội dung đầu tiên nếu có
+    const messages = [];
+    if (firstMessage) {
+      messages.push({
+        role: "user",
+        content: firstMessage.content || firstMessage,
+        metadata: firstMessage.metadata || { type: "text" }
+      });
+    }
+
+    // Create new chat history
+    const newChat = await ChatHistoryModel.create({
+      chatId,
+      userId,
+      title,
+      chatType: chatType || "text-to-text",
+      messages
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Tạo đoạn chat thành công",
+      data: newChat
+    });
+
+  } catch (error) {
+    console.error("Create chat history error:", error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
         success: false,
-        message: "Thiếu prompt"
+        message: messages.join(', ')
       });
     }
 
-    // Gọi Replicate API
-    const response = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${process.env.REPLICATE_API_KEY}`, // 🔑 API key lấy từ .env
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        version: "991ed12a2ef8ad7f09a86e73c0756f461fc2a824d4dbbe8b2f4b6d28857e1f5c", // Stable Diffusion model
-        input: { prompt }
-      }),
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      res.status(200).json({
-        success: true,
-        data
-      });
-    } else {
-      res.status(response.status).json({
-        success: false,
-        message: data.error || "Lỗi khi gọi Replicate"
-      });
-    }
-  } catch (err) {
-    console.error("Replicate error:", err);
     res.status(500).json({
       success: false,
-      message: "Lỗi server khi gọi Replicate"
+      message: "Lỗi server nội bộ"
     });
   }
 });
 
-// Tạo MongoDB client riêng cho API keys collection
-const { MongoClient, ObjectId } = require("mongodb");
-const jwt = require("jsonwebtoken");
-let apiDb;
-
-// Connect to MongoDB for API keys
-async function connectAPIDB() {
+// 2. POST /api/chat/history/:chatId/messages - Thêm message vào đoạn chat
+app.post("/api/chat/history/:chatId/messages", async (req, res) => {
   try {
-    const client = new MongoClient(process.env.MONGODB_URI);
-    await client.connect();
-    apiDb = client.db("WebAIGenInfinityDB");
-    console.log("✅ API Database connected!");
-  } catch (err) {
-    console.error("❌ API DB connection error:", err);
-  }
-}
+    const { chatId } = req.params;
+    const { role, content, metadata } = req.body;
 
-// Initialize API DB connection
-connectAPIDB();
-
-app.get("/api/keys", async (req, res) => {
-  try {
-    if (!apiDb) {
-      return res.status(503).json({ error: "API Database not ready" });
+    // Validate input
+    if (!role || !content) {
+      return res.status(400).json({
+        success: false,
+        message: "role và content là bắt buộc"
+      });
     }
-    const apiKeys = await apiDb.collection("api").find({}).toArray();
-    res.json(apiKeys);
-  } catch (err) {
-    console.error("Get API keys error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
-app.get("/api/keys/:id", async (req, res) => {
-  try {
-    if (!apiDb) {
-      return res.status(503).json({ error: "API Database not ready" });
+    if (!["user", "assistant"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "role phải là 'user' hoặc 'assistant'"
+      });
     }
-    const apiKey = await apiDb
-      .collection("api")
-      .findOne({ _id: new ObjectId(req.params.id) });
-    if (!apiKey) return res.status(404).json({ error: "Key not found" });
-    res.json(apiKey);
-  } catch (err) {
-    console.error("Get API key error:", err);
-    res.status(500).json({ error: err.message });
+
+    // Find and update chat
+    const chat = await ChatHistoryModel.findOneAndUpdate(
+      { chatId },
+      {
+        $push: {
+          messages: {
+            role,
+            content,
+            metadata: metadata || { type: "text" },
+            timestamp: new Date()
+          }
+        }
+      },
+      { new: true }
+    );
+
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đoạn chat"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Thêm message thành công",
+      data: chat
+    });
+
+  } catch (error) {
+    console.error("Add message error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server nội bộ"
+    });
   }
 });
 
-// ===================== HEALTH CHECK =====================
-app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "API đang hoạt động",
-    timestamp: new Date().toISOString(),
-    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
-  });
+// 3. GET /api/chat/history/user/:userId - Lấy danh sách các đoạn chat của user
+app.get("/api/chat/history/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { page = 1, limit = 20, chatType } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    let query = { userId };
+    if (chatType) {
+      query.chatType = chatType;
+    }
+
+    // Lấy danh sách chat, chỉ lấy thông tin cơ bản (không lấy toàn bộ messages)
+    const chats = await ChatHistoryModel
+      .find(query)
+      .select('chatId title chatType createdAt updatedAt')
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ updatedAt: -1 });
+
+    const total = await ChatHistoryModel.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy danh sách chat thành công",
+      data: chats,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: Math.ceil(total / parseInt(limit)),
+        total_chats: total,
+        per_page: parseInt(limit)
+      }
+    });
+
+  } catch (error) {
+    console.error("Get chat list error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server nội bộ"
+    });
+  }
 });
 
-// Error handling middleware
+// 4. GET /api/chat/history/:chatId - Lấy chi tiết đoạn chat theo chatId
+app.get("/api/chat/history/:chatId", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+
+    const chat = await ChatHistoryModel.findOne({ chatId });
+
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đoạn chat"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Lấy chi tiết chat thành công",
+      data: chat
+    });
+
+  } catch (error) {
+    console.error("Get chat detail error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server nội bộ"
+    });
+  }
+});
+
+// 5. PUT /api/chat/history/:chatId/title - Cập nhật title của đoạn chat
+app.put("/api/chat/history/:chatId/title", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { title } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Title không được để trống"
+      });
+    }
+
+    const chat = await ChatHistoryModel.findOneAndUpdate(
+      { chatId },
+      { title: title.trim() },
+      { new: true }
+    ).select('chatId title chatType updatedAt');
+
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đoạn chat"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Cập nhật title thành công",
+      data: chat
+    });
+
+  } catch (error) {
+    console.error("Update chat title error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server nội bộ"
+    });
+  }
+});
+
+// 6. DELETE /api/chat/history/:chatId - Xóa đoạn chat
+app.delete("/api/chat/history/:chatId", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+
+    const chat = await ChatHistoryModel.findOneAndDelete({ chatId });
+
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đoạn chat"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Xóa đoạn chat thành công",
+      data: { chatId }
+    });
+
+  } catch (error) {
+    console.error("Delete chat error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server nội bộ"
+    });
+  }
+});
+
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
