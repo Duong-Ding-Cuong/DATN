@@ -113,7 +113,7 @@ const useNewChat = () => {
     const callAPI = async (message: string): Promise<string> => {
         try {
             const response = await fetch(
-                "https://n8n-production-64f1.up.railway.app/webhook/chat-text",
+                "https://n8n-production-64f1.up.railway.app/webhook-test/chat-text",
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },

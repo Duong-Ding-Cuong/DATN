@@ -17,7 +17,7 @@ export const GamePreview: React.FC<Props> = ({ iframeRef, onReset }) => {
             <GameFrame
                 ref={iframeRef}
                 title="Game Preview"
-                sandbox="allow-scripts allow-same-origin"
+                sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
             />
 
             <GameInstructions>

@@ -1,37 +1,19 @@
 import React, { useRef, useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import { Send, Plus, X, Image as ImageIcon } from "lucide-react";
+import { Plus, X, ImageIcon } from "lucide-react";
 import { MyLayout } from "../../../layout/layout";
 import useHandleImage from "../hooks/use-handle-image";
 import {
     RootContainer,
-    DragOverlay,
-    DragText,
     MessagesContainer,
     MessagesInner,
-    MessageRow,
-    MessageBubble,
-    Timestamp,
-    LoadingRow,
-    LoadingBubble,
-    LoadingDots,
-    LoadingDot,
-    LoadingText,
     InputContainer,
-    WelcomeMessage,
-    ImagePreviewBox,
-    ImagePreviewRow,
-    ImagePreview,
-    ImagePreviewInfo,
-    ImagePreviewName,
-    ImagePreviewDesc,
-    RemoveImageButton,
-    InputForm,
-    FileButton,
-    StyledTextarea,
+    InputWrapper,
     SendButton,
-    HintText,
-} from "./style";
+    WelcomeContainer,
+    WelcomeTitle,
+} from "../../../../components/new-chat.styled";
+import { MessageList } from "../../../../components/messsage-list";
+import styled from "styled-components";
 
 export const NewChatComponent = () => {
     const {
@@ -45,28 +27,33 @@ export const NewChatComponent = () => {
         setSelectedImage,
     } = useHandleImage();
 
-    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isDragging, setIsDragging] = useState(false);
-    // Ref for auto-scroll
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    // Auto scroll to bottom when messages or loading changes
+    const [isDragging, setIsDragging] = useState(false);
+
+    // Auto scroll to bottom when messages change
     useEffect(() => {
-        if (messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isLoading]);
 
-    // Gửi tin nhắn (text, image hoặc cả hai) chỉ qua handleSubmit của hook
-    const onSubmit = async (e?: React.MouseEvent | React.KeyboardEvent) => {
-        e?.preventDefault();
+    // Auto-resize textarea
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+    }, [inputValue]);
+
+    const onSubmit = async () => {
+        if ((!inputValue.trim() && !selectedImage) || isLoading) return;
         await handleSubmit();
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            onSubmit(e);
+            onSubmit();
         }
     };
 
@@ -125,9 +112,7 @@ export const NewChatComponent = () => {
     };
 
     return (
-        <MyLayout
-            styles={{ padding: 0, background: "#212121", overflow: "hidden" }}
-        >
+        <MyLayout>
             <RootContainer
                 onDragEnter={handleDragEnter}
                 onDragLeave={handleDragLeave}
@@ -141,179 +126,58 @@ export const NewChatComponent = () => {
                     </DragOverlay>
                 )}
 
-                {messages.length > 0 && (
-                    <MessagesContainer
-                        $isInputCentered={isInputCentered}
-                        className="messages-container"
-                    >
+                {!isInputCentered && (
+                    <MessagesContainer $isInputCentered={isInputCentered}>
                         <MessagesInner>
-                            {messages.map((message, index) => {
-                                // Luôn hiển thị nếu có image hoặc text
-                                const isLast = index === messages.length - 1;
-                                return (
-                                    <MessageRow
-                                        key={message.id}
-                                        $isUser={message.isUser}
-                                        $index={index}
-                                        $isLast={isLast}
-                                    >
-                                        <MessageBubble $isUser={message.isUser}>
-                                            {message.image && (
-                                                <img
-                                                    src={message.image}
-                                                    alt="Uploaded"
-                                                    style={{
-                                                        maxWidth: "300px",
-                                                        maxHeight: "300px",
-                                                        borderRadius: "8px",
-                                                        marginBottom:
-                                                            message.text
-                                                                ? "8px"
-                                                                : "0",
-                                                    }}
-                                                />
-                                            )}
-                                            {message.text && (
-                                                <ReactMarkdown
-                                                    children={message.text}
-                                                    components={{
-                                                        p: (props) => (
-                                                            <p
-                                                                style={{
-                                                                    margin: 0,
-                                                                    fontSize:
-                                                                        "14px",
-                                                                    whiteSpace:
-                                                                        "pre-wrap",
-                                                                }}
-                                                                {...props}
-                                                            />
-                                                        ),
-                                                        strong: (props) => (
-                                                            <strong
-                                                                style={{
-                                                                    fontWeight:
-                                                                        "bold",
-                                                                }}
-                                                                {...props}
-                                                            />
-                                                        ),
-                                                        em: (props) => (
-                                                            <em
-                                                                style={{
-                                                                    fontStyle:
-                                                                        "italic",
-                                                                }}
-                                                                {...props}
-                                                            />
-                                                        ),
-                                                        u: (props) => (
-                                                            <u
-                                                                style={{
-                                                                    textDecoration:
-                                                                        "underline",
-                                                                }}
-                                                                {...props}
-                                                            />
-                                                        ),
-                                                        code: (props) => (
-                                                            <code
-                                                                style={{
-                                                                    backgroundColor:
-                                                                        "#2d2d2d",
-                                                                    padding:
-                                                                        "2px 4px",
-                                                                    borderRadius:
-                                                                        "4px",
-                                                                    fontFamily:
-                                                                        "monospace",
-                                                                }}
-                                                                {...props}
-                                                            />
-                                                        ),
-                                                    }}
-                                                />
-                                            )}
-                                            <Timestamp>
-                                                {message.timestamp}
-                                            </Timestamp>
-                                        </MessageBubble>
-                                    </MessageRow>
-                                );
-                            })}
-                            {isLoading && (
-                                <LoadingRow>
-                                    <LoadingBubble>
-                                        <LoadingDots>
-                                            <LoadingDot delay="-0.32s" />
-                                            <LoadingDot delay="-0.16s" />
-                                            <LoadingDot />
-                                        </LoadingDots>
-                                        <LoadingText>
-                                            {selectedImage
-                                                ? "N8N đang phân tích ảnh..."
-                                                : "AI suy nghĩ và đang trả lời..."}
-                                        </LoadingText>
-                                    </LoadingBubble>
-                                </LoadingRow>
-                            )}
-                            {/* Auto-scroll anchor */}
+                            <MessageList
+                                messages={messages}
+                                isLoading={isLoading}
+                                loadingText={
+                                    selectedImage
+                                        ? "Đang phân tích ảnh..."
+                                        : "AI đang trả lời..."
+                                }
+                            />
                             <div ref={messagesEndRef} />
                         </MessagesInner>
                     </MessagesContainer>
                 )}
 
                 <InputContainer $isInputCentered={isInputCentered}>
-                    <WelcomeMessage $isInputCentered={isInputCentered}>
-                        <h2
-                            style={{
-                                fontSize: "32px",
-                                fontWeight: "bold",
-                                color: "white",
-                                margin: "0 0 16px 0",
-                            }}
-                        >
-                            Xin chào!
-                        </h2>
-                        <p
-                            style={{
-                                fontSize: "18px",
-                                color: "#d1d5db",
-                                margin: 0,
-                            }}
-                        >
-                            Hãy nhập tin nhắn hoặc upload ảnh để bắt đầu
-                        </p>
-                    </WelcomeMessage>
+                    {isInputCentered && (
+                        <WelcomeContainer>
+                            <WelcomeTitle>Xin chào!</WelcomeTitle>
+                            <WelcomeSubtitle>
+                                Hãy nhập tin nhắn hoặc upload ảnh để bắt đầu
+                            </WelcomeSubtitle>
+                        </WelcomeContainer>
+                    )}
 
                     {selectedImage && (
                         <ImagePreviewBox>
-                            <ImagePreviewRow>
-                                <ImagePreview
-                                    src={selectedImage.preview}
-                                    alt="Preview"
-                                />
-                                <ImagePreviewInfo>
-                                    <ImagePreviewName>
-                                        {selectedImage.file.name}
-                                    </ImagePreviewName>
-                                    <ImagePreviewDesc>
-                                        Sẵn sàng gửi đến AI
-                                    </ImagePreviewDesc>
-                                </ImagePreviewInfo>
-                                <RemoveImageButton
-                                    onClick={removeSelectedImage}
-                                >
-                                    <X size={16} />
-                                </RemoveImageButton>
-                            </ImagePreviewRow>
+                            <ImagePreview
+                                src={selectedImage.preview}
+                                alt="Preview"
+                            />
+                            <ImagePreviewInfo>
+                                <ImagePreviewName>
+                                    {selectedImage.file.name}
+                                </ImagePreviewName>
+                                <ImagePreviewDesc>
+                                    Sẵn sàng gửi đến AI
+                                </ImagePreviewDesc>
+                            </ImagePreviewInfo>
+                            <RemoveImageButton onClick={removeSelectedImage}>
+                                <X size={16} />
+                            </RemoveImageButton>
                         </ImagePreviewBox>
                     )}
 
-                    <InputForm $isInputCentered={isInputCentered}>
+                    <InputWrapper>
                         <FileButton
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isLoading}
+                            title="Chọn ảnh"
                         >
                             <Plus size={18} />
                         </FileButton>
@@ -327,12 +191,10 @@ export const NewChatComponent = () => {
                         />
 
                         <StyledTextarea
-                            ref={inputRef}
+                            ref={textareaRef}
                             value={inputValue}
-                            onChange={(
-                                e: React.ChangeEvent<HTMLTextAreaElement>
-                            ) => setInputValue(e.target.value)}
-                            onKeyDown={handleKeyPress}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyPress={handleKeyPress}
                             placeholder={
                                 isLoading
                                     ? "Đang xử lý..."
@@ -340,26 +202,22 @@ export const NewChatComponent = () => {
                                     ? "Mô tả về ảnh này (tùy chọn)..."
                                     : "Nhập tin nhắn hoặc chọn ảnh..."
                             }
-                            disabled={isLoading}
-                            $isLoading={isLoading}
                             rows={1}
+                            disabled={isLoading}
                         />
+
                         <SendButton
                             onClick={onSubmit}
                             disabled={
                                 (!inputValue.trim() && !selectedImage) ||
                                 isLoading
                             }
-                            $active={
-                                (!!inputValue.trim() || !!selectedImage) &&
-                                !isLoading
-                            }
                         >
-                            <Send size={18} />
+                            ➤
                         </SendButton>
-                    </InputForm>
+                    </InputWrapper>
 
-                    <HintText $isInputCentered={isInputCentered}>
+                    <HintText>
                         {isLoading
                             ? selectedImage
                                 ? "Đang cho AI xử lý hình ảnh..."
@@ -367,9 +225,164 @@ export const NewChatComponent = () => {
                             : "Nhấn Enter để gửi, kéo thả ảnh hoặc nhấn + để chọn file"}
                     </HintText>
                 </InputContainer>
-
-                {/* Keyframes and scrollbar hidden are now in styled-components */}
             </RootContainer>
         </MyLayout>
     );
 };
+
+// Styled Components
+const DragOverlay = styled.div`
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(37, 99, 235, 0.1);
+    backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 1000;
+`;
+
+const DragText = styled.p`
+    font-size: 18px;
+    color: #2563eb;
+    font-weight: 600;
+`;
+
+const WelcomeSubtitle = styled.p`
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 8px 0 0 0;
+`;
+
+const ImagePreviewBox = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    margin-bottom: 12px;
+`;
+
+const ImagePreview = styled.img`
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+`;
+
+const ImagePreviewInfo = styled.div`
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+`;
+
+const ImagePreviewName = styled.span`
+    font-size: 14px;
+    color: #fff;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+`;
+
+const ImagePreviewDesc = styled.span`
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+`;
+
+const RemoveImageButton = styled.button`
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    transition: all 0.2s;
+
+    &:hover {
+        background: rgba(255, 0, 0, 0.2);
+    }
+`;
+
+const FileButton = styled.button`
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 8px;
+    transition: all 0.2s;
+
+    &:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+`;
+
+const StyledTextarea = styled.textarea`
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 15px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+
+    &::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    /* Custom scrollbar */
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+`;
+
+const HintText = styled.p`
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    margin: 8px 0 0 0;
+`;

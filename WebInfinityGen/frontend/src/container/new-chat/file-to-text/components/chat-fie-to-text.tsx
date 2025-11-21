@@ -59,8 +59,62 @@ const MessageBubble = styled.div<{ $isUser: boolean }>`
     border-bottom-left-radius: ${({ $isUser }) => ($isUser ? "16px" : "4px")};
     max-width: 70%;
     word-wrap: break-word;
+    white-space: pre-wrap;
     line-height: 28px;
     font-size: 1rem;
+
+    /* Style cho markdown formatting */
+    strong,
+    b {
+        font-weight: 700;
+        color: #fbbf24;
+    }
+
+    em,
+    i {
+        font-style: italic;
+        color: #a78bfa;
+    }
+
+    code {
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-size: 0.9em;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-weight: 600;
+        margin: 12px 0 8px 0;
+        color: #60a5fa;
+    }
+
+    ul,
+    ol {
+        margin: 8px 0;
+        padding-left: 20px;
+    }
+
+    li {
+        margin: 4px 0;
+    }
+
+    hr {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        margin: 12px 0;
+    }
+
+    a {
+        color: #60a5fa;
+        text-decoration: underline;
+    }
 `;
 
 const Timestamp = styled.p`
@@ -242,6 +296,35 @@ const HintText = styled.p<{ $isInputCentered: boolean }>`
 `;
 
 // ============ COMPONENT ============
+
+// Helper function để format text với markdown cơ bản
+const formatMessageText = (text: string): JSX.Element => {
+    // Xử lý markdown cơ bản
+    let formatted = text
+        // Bold: **text** hoặc __text__
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/__(.+?)__/g, "<strong>$1</strong>")
+        // Italic: *text* hoặc _text_
+        .replace(/\*(.+?)\*/g, "<em>$1</em>")
+        .replace(/_(.+?)_/g, "<em>$1</em>")
+        // Code: `code`
+        .replace(/`(.+?)`/g, "<code>$1</code>")
+        // Headers: ### text
+        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+        .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+        // Horizontal rule: ---
+        .replace(/^---$/gm, "<hr/>")
+        // Lists: * item hoặc - item
+        .replace(/^\* (.+)$/gm, "<li>$1</li>")
+        .replace(/^- (.+)$/gm, "<li>$1</li>");
+
+    // Wrap li tags trong ul
+    formatted = formatted.replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
+
+    return <div dangerouslySetInnerHTML={{ __html: formatted }} />;
+};
+
 export default function ChatFileToText() {
     const {
         messages,
@@ -295,7 +378,9 @@ export default function ChatFileToText() {
                         >
                             <div>
                                 <MessageBubble $isUser={msg.isUser}>
-                                    {msg.text}
+                                    {msg.isUser
+                                        ? msg.text
+                                        : formatMessageText(msg.text)}
                                     {msg.fileUrl && msg.fileName && (
                                         <FileLink
                                             href={msg.fileUrl}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 export type Message = {
     id: number;
@@ -21,6 +21,8 @@ type N8nResponse = {
     text?: string;
 };
 
+const API_BASE_URL = "http://localhost:5000/api";
+
 export const useCreateGame = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
@@ -30,7 +32,41 @@ export const useCreateGame = () => {
         css: string;
         javascript: string;
     } | null>(null);
+    const [chatId, setChatId] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [pendingGameCode, setPendingGameCode] = useState<{
+        html: string;
+        css: string;
+        javascript: string;
+    } | null>(null);
     const location = useLocation();
+    const [searchParams] = useSearchParams();
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const [error, setError] = useState<string | null>(null);
+    const isInputCentered = messages.length === 0;
+
+    // Lấy userId từ localStorage
+    useEffect(() => {
+        try {
+            const userStr = localStorage.getItem("user");
+            if (userStr) {
+                const userObj = JSON.parse(userStr);
+                if (userObj && userObj._id) {
+                    setUserId(userObj._id);
+                }
+            }
+        } catch (error) {
+            console.error("Error getting user from localStorage:", error);
+        }
+    }, []);
+
+    // Load chat history nếu có chatId trong URL
+    useEffect(() => {
+        const chatIdFromUrl = searchParams.get("chatId");
+        if (chatIdFromUrl && userId) {
+            loadChatHistory(chatIdFromUrl);
+        }
+    }, [searchParams, userId]);
 
     // Lắng nghe event tạo chat mới
     useEffect(() => {
@@ -42,6 +78,7 @@ export const useCreateGame = () => {
                 setMessages([]);
                 setInputValue("");
                 setCurrentGame(null);
+                setChatId(null);
             }
         };
 
@@ -50,10 +87,206 @@ export const useCreateGame = () => {
             window.removeEventListener("createNewChat", handleCreateNewChat);
         };
     }, [messages, location.pathname]);
-    const [error, setError] = useState<string | null>(null);
 
-    const isInputCentered = messages.length === 0;
-    const iframeRef = useRef<HTMLIFrameElement>(null);
+    // Inject game code khi iframe ready
+    useEffect(() => {
+        if (pendingGameCode && iframeRef.current) {
+            console.log("🎮 Injecting pending game code into iframe");
+            setTimeout(() => {
+                injectGameCode(pendingGameCode);
+                setPendingGameCode(null);
+            }, 300);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingGameCode]);
+
+    // Load chat history từ database
+    const loadChatHistory = async (historyId: string) => {
+        try {
+            setIsLoading(true);
+            const response = await fetch(
+                `${API_BASE_URL}/chat/history/${historyId}`
+            );
+
+            if (!response.ok) {
+                throw new Error("Failed to load chat history");
+            }
+
+            const result = await response.json();
+            if (result.success && result.data) {
+                const chatData = result.data;
+                setChatId(chatData.chatId);
+
+                // Convert messages từ database
+                const convertedMessages: Message[] = await Promise.all(
+                    chatData.messages.map(
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        async (msg: any, index: number) => {
+                            let gameCode = undefined;
+
+                            // Nếu message có gameUrl, load game code từ MinIO
+                            if (msg.metadata?.gameUrl) {
+                                try {
+                                    const gameResponse = await fetch(
+                                        msg.metadata.gameUrl
+                                    );
+                                    if (gameResponse.ok) {
+                                        gameCode = await gameResponse.json();
+                                        console.log(
+                                            "✅ Loaded game code from MinIO:",
+                                            {
+                                                hasHtml: !!gameCode?.html,
+                                                hasCss: !!gameCode?.css,
+                                                hasJs: !!gameCode?.javascript,
+                                                htmlPreview:
+                                                    gameCode?.html?.substring(
+                                                        0,
+                                                        100
+                                                    ),
+                                                jsPreview:
+                                                    gameCode?.javascript?.substring(
+                                                        0,
+                                                        100
+                                                    ),
+                                            }
+                                        );
+                                    }
+                                } catch (error) {
+                                    console.error(
+                                        "Error loading game from MinIO:",
+                                        error
+                                    );
+                                }
+                            }
+
+                            return {
+                                id: Date.now() + index,
+                                text: msg.content,
+                                timestamp: new Date(
+                                    msg.timestamp
+                                ).toLocaleTimeString("vi-VN"),
+                                isUser: msg.role === "user",
+                                gameCode: gameCode,
+                            };
+                        }
+                    )
+                );
+
+                setMessages(convertedMessages);
+
+                // ✅ Không tự động mở game khi load lịch sử
+                // Game chỉ mở khi user click "Chơi lại game này"
+                console.log("✅ Chat history loaded, game ready to replay");
+            }
+        } catch (error) {
+            console.error("Error loading chat history:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Tạo chat mới trong database
+    const createChatHistory = async (firstMessage: string): Promise<string> => {
+        try {
+            const newChatId = `chat_${Date.now()}_${Math.random()
+                .toString(36)
+                .substr(2, 9)}`;
+
+            const response = await fetch(`${API_BASE_URL}/chat/history`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chatId: newChatId,
+                    userId: userId,
+                    title:
+                        firstMessage.substring(0, 50) +
+                        (firstMessage.length > 50 ? "..." : ""),
+                    chatType: "create-game",
+                    firstMessage: {
+                        content: firstMessage,
+                        metadata: { type: "game" },
+                    },
+                }),
+            });
+
+            if (!response.ok) {
+                console.error("Failed to create chat history");
+                return newChatId;
+            }
+
+            const data = await response.json();
+            console.log("Chat history created:", data);
+
+            // Dispatch event để cập nhật danh sách lịch sử
+            window.dispatchEvent(new CustomEvent("chatCreated"));
+
+            return newChatId;
+        } catch (error) {
+            console.error("Error creating chat history:", error);
+            return `chat_${Date.now()}`;
+        }
+    };
+
+    // Thêm message vào lịch sử chat
+    const addMessageToHistory = async (
+        role: "user" | "assistant",
+        content: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        metadata?: Record<string, any>
+    ) => {
+        if (!chatId || !userId) return;
+
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/chat/history/${chatId}/messages`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        role,
+                        content,
+                        metadata: metadata || { type: "game" },
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                console.error("Failed to add message to history");
+            }
+        } catch (error) {
+            console.error("Error adding message to history:", error);
+        }
+    };
+
+    // Upload game code as JSON to MinIO
+    const uploadGameToMinIO = async (gameCode: {
+        html: string;
+        css: string;
+        javascript: string;
+    }): Promise<string | null> => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/upload/json`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    jsonData: gameCode,
+                    fileName: `game_${Date.now()}.json`,
+                }),
+            });
+
+            if (!response.ok) {
+                console.error("Failed to upload game to MinIO");
+                return null;
+            }
+
+            const result = await response.json();
+            console.log("✅ Game uploaded to MinIO:", result.data.url);
+            return result.data.url;
+        } catch (error) {
+            console.error("Error uploading game to MinIO:", error);
+            return null;
+        }
+    };
 
     // 🚀 Call n8n API để tạo game
     const callN8nAPI = async (userMessage: string): Promise<N8nResponse> => {
@@ -63,7 +296,7 @@ export const useCreateGame = () => {
             };
 
             const response = await fetch(
-                "http://localhost:5678/webhook-test/create-game",
+                "https://n8n-production-64f1.up.railway.app/webhook-test/create-game",
                 {
                     method: "POST",
                     headers: {
@@ -260,8 +493,77 @@ export const useCreateGame = () => {
             return;
         }
 
-        // ✅ Tạo HTML hoàn chỉnh với CSS và JS
-        const fullHTML = `
+        let fullHTML: string;
+
+        // ✅ Check if HTML already contains full document structure
+        const isFullDocument =
+            gameCode.html.includes("<!DOCTYPE") ||
+            gameCode.html.includes("<html");
+
+        if (isFullDocument) {
+            // Case 1: gameCode.html đã là full HTML document
+            console.log("📄 Using full HTML document from game code");
+
+            // Extract and merge CSS and JS into the full document
+            let htmlDoc = gameCode.html;
+
+            // Loại bỏ external scripts/links
+            htmlDoc = htmlDoc.replace(
+                /<script\s+src=["'][^"']*["'][^>]*><\/script>/gi,
+                ""
+            );
+            htmlDoc = htmlDoc.replace(
+                /<link\s+[^>]*href=["'](?!data:)[^"']*["'][^>]*>/gi,
+                ""
+            );
+
+            // Inject CSS vào <head> nếu có và chưa có CSS
+            if (gameCode.css && gameCode.css.trim()) {
+                const styleTag = `<style>${gameCode.css}</style>`;
+                if (
+                    htmlDoc.includes("</head>") &&
+                    !htmlDoc.includes(gameCode.css.substring(0, 50))
+                ) {
+                    htmlDoc = htmlDoc.replace(
+                        "</head>",
+                        `${styleTag}\n</head>`
+                    );
+                }
+            }
+
+            // Inject JS vào cuối <body> nếu có và chưa có JS
+            if (gameCode.javascript && gameCode.javascript.trim()) {
+                // Check nếu JS chưa có trong HTML (tránh duplicate)
+                const jsPreview = gameCode.javascript.substring(0, 100).trim();
+                if (
+                    htmlDoc.includes("</body>") &&
+                    !htmlDoc.includes(jsPreview)
+                ) {
+                    const scriptTag = `<script>${gameCode.javascript}</script>`;
+                    htmlDoc = htmlDoc.replace(
+                        "</body>",
+                        `${scriptTag}\n</body>`
+                    );
+                }
+            }
+
+            fullHTML = htmlDoc;
+        } else {
+            // Case 2: gameCode.html chỉ chứa body content
+            console.log("📦 Wrapping body content in HTML template");
+
+            // Loại bỏ external scripts/links từ HTML content
+            let cleanHtml = gameCode.html;
+            cleanHtml = cleanHtml.replace(
+                /<script\s+src=["'][^"']*["'][^>]*><\/script>/gi,
+                ""
+            );
+            cleanHtml = cleanHtml.replace(
+                /<link\s+[^>]*href=["'](?!data:)[^"']*["'][^>]*>/gi,
+                ""
+            );
+
+            fullHTML = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -280,33 +582,56 @@ export const useCreateGame = () => {
             overflow: hidden;
             font-family: Arial, sans-serif;
         }
-        ${gameCode.css}
+        ${gameCode.css || ""}
     </style>
 </head>
 <body>
-    ${gameCode.html}
+    ${cleanHtml}
     <script>
-        ${gameCode.javascript}
+        ${gameCode.javascript || ""}
     </script>
 </body>
 </html>
-        `.trim();
+            `.trim();
+        }
 
         // ✅ Write to iframe
         iframeDoc.open();
         iframeDoc.write(fullHTML);
         iframeDoc.close();
 
-        console.log("✅ Game injected into iframe");
+        console.log("✅ Game injected into iframe", {
+            htmlLength: fullHTML.length,
+            hasScript: fullHTML.includes("<script"),
+            hasStyle: fullHTML.includes("<style"),
+            isFullDoc: isFullDocument,
+        });
+
+        // ✅ Focus iframe để nhận keyboard events
+        setTimeout(() => {
+            if (iframe.contentWindow) {
+                iframe.contentWindow.focus();
+            }
+        }, 100);
     };
 
     // 📤 Handle submit
     const handleSubmit = async () => {
         if (!inputValue.trim() || isLoading) return;
 
+        const userMessageText = inputValue.trim();
+
+        // Nếu là tin nhắn đầu tiên, tạo chat history mới
+        let currentChatId = chatId;
+        if (!currentChatId && userId) {
+            const newChatId = await createChatHistory(userMessageText);
+            setChatId(newChatId);
+            currentChatId = newChatId;
+        }
+
         const userMessage: Message = {
             id: Date.now(),
-            text: inputValue,
+            text: userMessageText,
             timestamp: new Date().toLocaleTimeString("vi-VN", {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -319,10 +644,15 @@ export const useCreateGame = () => {
         setIsLoading(true);
         setError(null);
 
-        try {
-            console.log("🚀 Creating game from message:", inputValue);
+        // Nếu không phải tin nhắn đầu tiên, lưu tin nhắn user vào history
+        if (chatId) {
+            await addMessageToHistory("user", userMessageText);
+        }
 
-            const response = await callN8nAPI(inputValue);
+        try {
+            console.log("🚀 Creating game from message:", userMessageText);
+
+            const response = await callN8nAPI(userMessageText);
 
             // ✅ Add AI response message
             const aiMessage: Message = {
@@ -344,6 +674,46 @@ export const useCreateGame = () => {
             };
 
             setMessages((prev) => [...prev, aiMessage]);
+
+            // Lưu tin nhắn AI vào history
+            if (currentChatId && aiMessage.gameCode) {
+                // Upload game code to MinIO
+                const gameUrl = await uploadGameToMinIO(aiMessage.gameCode);
+
+                await fetch(
+                    `${API_BASE_URL}/chat/history/${currentChatId}/messages`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            role: "assistant",
+                            content: aiMessage.text,
+                            metadata: {
+                                type: "game",
+                                hasGameCode: true,
+                                gameUrl: gameUrl, // Lưu URL của game code
+                            },
+                        }),
+                    }
+                );
+            } else if (currentChatId) {
+                // Nếu không có game code, chỉ lưu text
+                await fetch(
+                    `${API_BASE_URL}/chat/history/${currentChatId}/messages`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            role: "assistant",
+                            content: aiMessage.text,
+                            metadata: {
+                                type: "game",
+                                hasGameCode: false,
+                            },
+                        }),
+                    }
+                );
+            }
 
             // ✅ Set current game và inject vào iframe
             if (aiMessage.gameCode) {
@@ -384,14 +754,30 @@ export const useCreateGame = () => {
         css: string;
         javascript: string;
     }) => {
+        console.log("🔄 Replaying game...");
         setCurrentGame(gameCode);
+
+        // Clear iframe trước khi inject lại
+        if (iframeRef.current) {
+            const iframeDoc =
+                iframeRef.current.contentDocument ||
+                iframeRef.current.contentWindow?.document;
+            if (iframeDoc) {
+                iframeDoc.open();
+                iframeDoc.write("");
+                iframeDoc.close();
+            }
+        }
+
+        // Inject lại game code
         setTimeout(() => {
             injectGameCode(gameCode);
-        }, 100);
+        }, 150);
     };
 
-    // 🔄 Reset game
+    // 🔄 Reset game (đóng iframe)
     const resetGame = () => {
+        console.log("❌ Closing game...");
         setCurrentGame(null);
         if (iframeRef.current) {
             const iframeDoc =

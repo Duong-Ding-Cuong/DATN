@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 export type Message = {
     id: number;
@@ -15,13 +15,41 @@ type AIResponse = {
     image?: string;
 };
 
+const API_BASE_URL = "http://localhost:5000/api";
+
 export const useCreateImage = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [isInputCentered, setIsInputCentered] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+    const [chatId, setChatId] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(null);
     const location = useLocation();
+    const [searchParams] = useSearchParams();
+
+    // Lấy userId từ localStorage
+    useEffect(() => {
+        try {
+            const userStr = localStorage.getItem("user");
+            if (userStr) {
+                const userObj = JSON.parse(userStr);
+                if (userObj && userObj._id) {
+                    setUserId(userObj._id);
+                }
+            }
+        } catch (error) {
+            console.error("Error getting user from localStorage:", error);
+        }
+    }, []);
+
+    // Load chat history nếu có chatId trong URL
+    useEffect(() => {
+        const chatIdFromUrl = searchParams.get("chatId");
+        if (chatIdFromUrl && userId) {
+            loadChatHistory(chatIdFromUrl);
+        }
+    }, [searchParams, userId]);
 
     // Lắng nghe event tạo chat mới
     useEffect(() => {
@@ -34,6 +62,7 @@ export const useCreateImage = () => {
                 setInputValue("");
                 setIsInputCentered(true);
                 setUploadedImage(null);
+                setChatId(null);
             }
         };
 
@@ -42,6 +71,150 @@ export const useCreateImage = () => {
             window.removeEventListener("createNewChat", handleCreateNewChat);
         };
     }, [messages, location.pathname]);
+
+    // Load chat history từ database
+    const loadChatHistory = async (historyId: string) => {
+        try {
+            setIsLoading(true);
+            const response = await fetch(
+                `${API_BASE_URL}/chat/history/${historyId}`
+            );
+
+            if (!response.ok) {
+                throw new Error("Failed to load chat history");
+            }
+
+            const result = await response.json();
+            if (result.success && result.data) {
+                const chatData = result.data;
+                setChatId(chatData.chatId);
+
+                // Convert messages từ database
+                const convertedMessages: Message[] = chatData.messages.map(
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (msg: any, index: number) => ({
+                        id: Date.now() + index,
+                        text: msg.content,
+                        timestamp: new Date(msg.timestamp).toLocaleTimeString(
+                            "vi-VN"
+                        ),
+                        isUser: msg.role === "user",
+                        // Load ảnh từ MinIO URL nếu có
+                        image: msg.metadata?.imageUrl || msg.metadata?.image,
+                        inputImage: msg.metadata?.inputImage,
+                    })
+                );
+
+                setMessages(convertedMessages);
+                setIsInputCentered(false);
+            }
+        } catch (error) {
+            console.error("Error loading chat history:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Tạo chat mới trong database
+    const createChatHistory = async (firstMessage: string): Promise<string> => {
+        try {
+            const newChatId = `chat_${Date.now()}_${Math.random()
+                .toString(36)
+                .substr(2, 9)}`;
+
+            const response = await fetch(`${API_BASE_URL}/chat/history`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chatId: newChatId,
+                    userId: userId,
+                    title:
+                        firstMessage.substring(0, 50) +
+                        (firstMessage.length > 50 ? "..." : ""),
+                    chatType: "create-image",
+                    firstMessage: {
+                        content: firstMessage,
+                        metadata: { type: "image" },
+                    },
+                }),
+            });
+
+            if (!response.ok) {
+                console.error("Failed to create chat history");
+                return newChatId;
+            }
+
+            const data = await response.json();
+            console.log("Chat history created:", data);
+
+            // Dispatch event để cập nhật danh sách lịch sử
+            window.dispatchEvent(new CustomEvent("chatCreated"));
+
+            return newChatId;
+        } catch (error) {
+            console.error("Error creating chat history:", error);
+            return `chat_${Date.now()}`;
+        }
+    };
+
+    // Thêm message vào lịch sử chat
+    const addMessageToHistory = async (
+        role: "user" | "assistant",
+        content: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        metadata?: Record<string, any>
+    ) => {
+        if (!chatId || !userId) return;
+
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/chat/history/${chatId}/messages`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        role,
+                        content,
+                        metadata: metadata || { type: "image" },
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                console.error("Failed to add message to history");
+            }
+        } catch (error) {
+            console.error("Error adding message to history:", error);
+        }
+    };
+
+    // Upload ảnh lên MinIO và trả về URL
+    const uploadImageToMinIO = async (
+        base64Data: string
+    ): Promise<string | null> => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/upload/image`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ base64Data }),
+            });
+
+            if (!response.ok) {
+                console.error("Failed to upload image to MinIO");
+                return null;
+            }
+
+            const result = await response.json();
+            if (result.success && result.data?.url) {
+                console.log("✅ Image uploaded to MinIO:", result.data.url);
+                return result.data.url;
+            }
+            return null;
+        } catch (error) {
+            console.error("Error uploading to MinIO:", error);
+            return null;
+        }
+    };
 
     // 📤 Convert file to base64
     const fileToBase64 = (file: File): Promise<string> => {
@@ -182,7 +355,7 @@ export const useCreateImage = () => {
 
             // Gọi n8n webhook
             const response = await fetch(
-                "http://localhost:5678/webhook-test/create-image",
+                "https://n8n-production-64f1.up.railway.app/webhook-test/create-image",
                 {
                     method: "POST",
                     headers: {
@@ -440,6 +613,14 @@ export const useCreateImage = () => {
             hasInputImage: !!uploadedImage,
         });
 
+        // Nếu là tin nhắn đầu tiên, tạo chat history mới
+        let currentChatId = chatId;
+        if (!currentChatId && userId) {
+            const newChatId = await createChatHistory(userMessage);
+            setChatId(newChatId);
+            currentChatId = newChatId;
+        }
+
         // Create user message
         const userMsg: Message = {
             id: Date.now(),
@@ -456,6 +637,14 @@ export const useCreateImage = () => {
         setInputValue("");
         setIsInputCentered(false);
         setIsLoading(true);
+
+        // Nếu không phải tin nhắn đầu tiên, lưu tin nhắn user vào history
+        if (chatId) {
+            await addMessageToHistory("user", userMessage, {
+                hasInputImage: !!uploadedImage,
+                // Không lưu base64 image vì quá lớn
+            });
+        }
 
         try {
             // Call n8n API to create image
@@ -480,6 +669,28 @@ export const useCreateImage = () => {
 
             // Add AI message to chat
             setMessages((prev) => [...prev, aiMsg]);
+
+            // Upload ảnh lên MinIO và lưu URL vào history
+            if (currentChatId && aiResponse.image) {
+                const imageUrl = await uploadImageToMinIO(aiResponse.image);
+
+                await fetch(
+                    `${API_BASE_URL}/chat/history/${currentChatId}/messages`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            role: "assistant",
+                            content: aiMsg.text,
+                            metadata: {
+                                type: "image",
+                                imageUrl: imageUrl, // Lưu MinIO URL
+                                hasImage: !!imageUrl,
+                            },
+                        }),
+                    }
+                );
+            }
 
             // Clear uploaded image after processing
             setUploadedImage(null);

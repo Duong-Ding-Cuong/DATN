@@ -3,6 +3,7 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 const AccountModel = require("./models/account");
 const ChatHistoryModel = require("./models/chatHistory");
+const { ensureBucket, uploadBase64Image, uploadJsonObject, deleteImage } = require("./config/minio");
 require("dotenv").config();
 let fetch;
 try {
@@ -15,7 +16,9 @@ const upload = multer();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Tăng giới hạn request body để chấp nhận ảnh base64 lớn (50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Kết nối MongoDB với mongoose
 const dbUri = process.env.MONGODB_URI;
@@ -366,6 +369,14 @@ app.post("/api/chat/history/:chatId/messages", async (req, res) => {
     const { chatId } = req.params;
     const { role, content, metadata } = req.body;
 
+    console.log("Adding message to chat:", {
+      chatId,
+      role,
+      contentLength: content?.length,
+      metadataKeys: metadata ? Object.keys(metadata) : [],
+      metadataSize: JSON.stringify(metadata || {}).length
+    });
+
     // Validate input
     if (!role || !content) {
       return res.status(400).json({
@@ -404,6 +415,8 @@ app.post("/api/chat/history/:chatId/messages", async (req, res) => {
       });
     }
 
+    console.log("Message added successfully");
+
     res.status(200).json({
       success: true,
       message: "Thêm message thành công",
@@ -412,9 +425,15 @@ app.post("/api/chat/history/:chatId/messages", async (req, res) => {
 
   } catch (error) {
     console.error("Add message error:", error);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       success: false,
-      message: "Lỗi server nội bộ"
+      message: "Lỗi server nội bộ",
+      error: error.message
     });
   }
 });
@@ -562,6 +581,99 @@ app.delete("/api/chat/history/:chatId", async (req, res) => {
 });
 
 
+// ===================== MINIO IMAGE UPLOAD ENDPOINTS =====================
+
+// POST /api/upload/image - Upload base64 image to MinIO
+app.post("/api/upload/image", async (req, res) => {
+  try {
+    const { base64Data, fileName } = req.body;
+
+    if (!base64Data) {
+      return res.status(400).json({
+        success: false,
+        message: "base64Data là bắt buộc"
+      });
+    }
+
+    // Upload to MinIO
+    const result = await uploadBase64Image(base64Data, fileName);
+
+    res.status(200).json({
+      success: true,
+      message: "Upload ảnh thành công",
+      data: {
+        url: result.url,
+        objectName: result.objectName
+      }
+    });
+
+  } catch (error) {
+    console.error("Upload image error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi upload ảnh",
+      error: error.message
+    });
+  }
+});
+
+// DELETE /api/upload/image/:objectName - Delete image from MinIO
+app.delete("/api/upload/image/:objectName", async (req, res) => {
+  try {
+    const { objectName } = req.params;
+
+    await deleteImage(objectName);
+
+    res.status(200).json({
+      success: true,
+      message: "Xóa ảnh thành công"
+    });
+
+  } catch (error) {
+    console.error("Delete image error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi xóa ảnh",
+      error: error.message
+    });
+  }
+});
+
+// POST /api/upload/json - Upload JSON object to MinIO
+app.post("/api/upload/json", async (req, res) => {
+  try {
+    const { jsonData, fileName } = req.body;
+
+    if (!jsonData) {
+      return res.status(400).json({
+        success: false,
+        message: "jsonData là bắt buộc"
+      });
+    }
+
+    // Upload to MinIO
+    const result = await uploadJsonObject(jsonData, fileName);
+
+    res.status(200).json({
+      success: true,
+      message: "Upload JSON thành công",
+      data: {
+        url: result.url,
+        objectName: result.objectName
+      }
+    });
+
+  } catch (error) {
+    console.error("Upload JSON error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi upload JSON",
+      error: error.message
+    });
+  }
+});
+
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -570,7 +682,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// 404 handler - PHẢI ĐẶT CUỐI CÙNG
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -578,10 +690,14 @@ app.use((req, res) => {
   });
 });
 
+// ===================== END MINIO ENDPOINTS =====================
 
 // Start server
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  
+  // Initialize MinIO bucket
+  await ensureBucket();
 });

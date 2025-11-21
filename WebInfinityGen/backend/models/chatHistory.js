@@ -14,20 +14,10 @@ const messageSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  // Metadata cho các loại content đặc biệt
+  // Metadata linh hoạt cho các loại content đặc biệt
   metadata: {
-    type: {
-      type: String,
-      enum: ["text", "image", "game", "file"],
-      default: "text"
-    },
-    // Lưu URL ảnh nếu là tạo ảnh
-    imageUrl: String,
-    // Lưu URL game nếu là tạo game
-    gameUrl: String,
-    // Lưu tên file nếu là phân tích file
-    fileName: String,
-    fileType: String
+    type: mongoose.Schema.Types.Mixed,
+    default: { type: "text" }
   }
 });
 

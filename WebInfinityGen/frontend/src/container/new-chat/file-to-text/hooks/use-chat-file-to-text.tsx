@@ -43,41 +43,52 @@ export const useChatFileToText = () => {
         };
     }, [messages, location.pathname]);
 
-    // Helper: convert base64 to blob URL
-    const base64ToBlobUrl = (
-        base64: string,
-        mime = "application/octet-stream"
-    ) => {
-        try {
-            const binary = atob(base64);
-            const len = binary.length;
-            const buffer = new Uint8Array(len);
-            for (let i = 0; i < len; i++) buffer[i] = binary.charCodeAt(i);
-            const blob = new Blob([buffer], { type: mime });
-            return URL.createObjectURL(blob);
-        } catch (e) {
-            console.error("base64ToBlobUrl error:", e);
-            return undefined;
-        }
+    // Helper: convert File to base64 with data URL header
+    const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => {
+                if (typeof reader.result === "string") {
+                    // Giữ nguyên cả data URL header: "data:image/png;base64,..."
+                    resolve(reader.result);
+                } else {
+                    reject(new Error("Failed to read file"));
+                }
+            };
+            reader.onerror = (error) => reject(error);
+        });
     };
 
-    // Call API với multipart/form-data
+    // Call API với JSON body chứa base64
     const callLocalAPI = async (
         message: string,
         file?: File
     ): Promise<{ text?: string; fileUrl?: string; fileName?: string }> => {
         try {
-            const form = new FormData();
-            form.append("message", message || "");
+            let fileBase64: string | undefined;
+            let fileName: string | undefined;
+            let mimeType: string | undefined;
+
             if (file) {
-                form.append("file", file, file.name);
+                fileBase64 = await fileToBase64(file);
+                fileName = file.name;
+                mimeType = file.type;
             }
 
             const response = await fetch(
-                "http://localhost:5678/webhook-test/file-upload",
+                "http://localhost:5678/webhook-test/handle-file",
                 {
                     method: "POST",
-                    body: form,
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        message: message || "",
+                        file: fileBase64,
+                        fileName: fileName,
+                        mimeType: mimeType,
+                    }),
                 }
             );
 
@@ -110,58 +121,31 @@ export const useChatFileToText = () => {
 
             // Xử lý các định dạng JSON khác nhau
             if (responseData && typeof responseData === "object") {
-                interface ApiChoice {
-                    message?: { content?: string };
-                    [key: string]: unknown;
-                }
                 interface ApiResponse {
                     text?: string;
-                    fileBase64?: string;
-                    mime?: string;
-                    fileName?: string;
-                    choices?: ApiChoice[];
-                    output?: string;
+                    content?: {
+                        parts?: Array<{ text?: string }>;
+                        role?: string;
+                    };
                     [key: string]: unknown;
                 }
                 const r = responseData as ApiResponse;
 
-                // Format 1: { text: "..." }
+                // Format 1: { content: { parts: [{ text }] } } - Gemini/n8n format
+                if (r.content?.parts && Array.isArray(r.content.parts)) {
+                    const allTexts = r.content.parts
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .filter((part: any) => part?.text)
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .map((part: any) => part.text)
+                        .join("");
+
+                    if (allTexts) return { text: allTexts };
+                }
+
+                // Format 2: { text: "..." }
                 if (typeof r.text === "string") {
                     return { text: r.text };
-                }
-
-                // Format 2: { fileBase64: "...", mime: "...", fileName: "..." }
-                if (typeof r.fileBase64 === "string") {
-                    const url = base64ToBlobUrl(
-                        r.fileBase64,
-                        typeof r.mime === "string"
-                            ? r.mime
-                            : "application/octet-stream"
-                    );
-                    return {
-                        fileUrl: url,
-                        fileName:
-                            typeof r.fileName === "string"
-                                ? r.fileName
-                                : undefined,
-                    };
-                }
-
-                // Format 3: OpenAI-like response
-                if (Array.isArray(r.choices) && r.choices.length > 0) {
-                    const firstChoice = r.choices[0];
-                    if (
-                        firstChoice &&
-                        firstChoice.message &&
-                        typeof firstChoice.message.content === "string"
-                    ) {
-                        return { text: firstChoice.message.content };
-                    }
-                }
-
-                // Format 4: { output: "..." }
-                if (typeof r.output === "string") {
-                    return { text: r.output };
                 }
             }
 

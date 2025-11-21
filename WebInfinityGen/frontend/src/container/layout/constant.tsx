@@ -15,11 +15,11 @@ export const sidebarUnitItems = [
                 label: "Chat mới",
                 path: "/chat/new",
             },
-            {
-                key: "2",
-                label: "Phân tích file",
-                path: "/chat/file-to-text",
-            },
+            // {
+            //     key: "2",
+            //     label: "Phân tích file",
+            //     path: "/chat/file-to-text",
+            // },
         ],
     },
     {

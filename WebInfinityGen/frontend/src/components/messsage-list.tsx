@@ -22,6 +22,24 @@ export const MessageList = ({
     isLoading = false,
     loadingText = "AI đang trả lời...",
 }: MessageListProps) => {
+    // Download image function
+    const handleDownloadImage = async (imageUrl: string, messageId: number) => {
+        try {
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `image_${messageId}_${Date.now()}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Error downloading image:", error);
+        }
+    };
+
     return (
         <>
             {/* Render tin nhắn trên khung chat */}
@@ -33,10 +51,20 @@ export const MessageList = ({
 
                         {/* 2. Hình ảnh */}
                         {msg.image && (
-                            <MessageImage
-                                src={msg.image}
-                                alt="Message attachment"
-                            />
+                            <ImageContainer>
+                                <MessageImage
+                                    src={msg.image}
+                                    alt="Message attachment"
+                                />
+                                <DownloadButton
+                                    onClick={() =>
+                                        handleDownloadImage(msg.image!, msg.id)
+                                    }
+                                    title="Tải ảnh xuống"
+                                >
+                                    <DownloadOutlined /> Tải xuống
+                                </DownloadButton>
+                            </ImageContainer>
                         )}
 
                         {/* 3. File download */}
@@ -104,16 +132,49 @@ const MessageText = styled.p`
     white-space: pre-wrap;
 `;
 
+const ImageContainer = styled.div`
+    position: relative;
+    display: inline-block;
+    margin-top: 8px;
+`;
+
 const MessageImage = styled.img`
     max-width: 100%;
     max-height: 400px;
     border-radius: 8px;
-    margin-top: 8px;
     cursor: pointer;
     object-fit: contain;
+    display: block;
 
     &:hover {
         opacity: 0.9;
+    }
+`;
+
+const DownloadButton = styled.button`
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 16px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    justify-content: center;
+
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
     }
 `;
 

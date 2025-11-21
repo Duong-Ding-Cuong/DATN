@@ -6,6 +6,7 @@
         "express": "^5.1.0",
         "form-data": "^4.0.4",
         "jsonwebtoken": "^9.0.2",
+        "minio": "^8.0.6",
         "mongodb": "^6.20.0",
         "mongoose": "^8.18.1",
         "multer": "^2.0.2",
